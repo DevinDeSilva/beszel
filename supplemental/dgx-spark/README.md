@@ -100,6 +100,23 @@ The install script runs both as user services (lingering must be enabled). The
 agent listens on `127.0.0.1:45876` and is authorized only for the local hub's
 key. Re-run the script to upgrade.
 
+### Agent only, reporting to a hub elsewhere (e.g. a Mac)
+
+```bash
+AGENT_ONLY=1 HUB_KEY='ssh-ed25519 AAAA...' supplemental/dgx-spark/install-user-services.sh
+```
+
+Copy `HUB_KEY` from the remote hub's *Add System* dialog. Then add the system
+there with this machine's address (e.g. its Tailscale IP) and port `45876`.
+Allowed hub keys live in `~/.config/beszel/authorized_keys`, one per line, so
+more hubs can be added later. Upstream hubs show the renamed fans and zones in
+their normal charts. The thermal diagnostics section and peak-preserving long
+ranges need this fork's hub:
+
+```bash
+CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags "-w -s" -o build/beszel_darwin_arm64 ./internal/cmd/hub
+```
+
 Tests:
 
 ```bash
