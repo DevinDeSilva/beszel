@@ -14,6 +14,8 @@ import { BandwidthChart, ContainerNetworkChart } from "./system/charts/network-c
 import { TemperatureChart, FanChart, BatteryChart } from "./system/charts/sensor-charts"
 import { WiFiChart } from "./system/charts/wifi-chart"
 import { GpuPowerChart, GpuCharts } from "./system/charts/gpu-charts"
+import { ThermalDiagnostics } from "./system/charts/thermal-charts"
+import { hasPlatformThermal } from "@/lib/thermal"
 import {
 	LazyContainersTable,
 	LazyNetworkMonitorsTable,
@@ -24,7 +26,15 @@ import {
 	SystemdTable,
 } from "./system/lazy-tables"
 import { LoadAverageChart } from "./system/charts/load-average-chart"
-import { ContainerIcon, CpuIcon, HardDriveIcon, NetworkIcon, PackageIcon, TerminalSquareIcon } from "lucide-react"
+import {
+	ContainerIcon,
+	CpuIcon,
+	HardDriveIcon,
+	NetworkIcon,
+	PackageIcon,
+	TerminalSquareIcon,
+	ThermometerIcon,
+} from "lucide-react"
 import { GpuIcon } from "../ui/icons"
 import ContainersTable from "../containers-table/containers-table"
 
@@ -74,12 +84,14 @@ export default memo(function SystemDetail({ id }: { id: string }) {
 	const hasSystemd = system.info.sv
 	const hasGpu = hasGpuData || hasGpuPowerData
 	const hasZfs = Object.keys(systemStats.at(-1)?.stats?.z ?? {}).length > 0
+	const hasThermal = hasPlatformThermal(systemStats.at(-1)?.stats)
 	const hasNetworkMonitors = supportsNetworkMonitors(system)
 	// counts key the table so it refetches the list only after a new check
 	const packageUpdates = system.status === SystemStatus.Up && system.info.pu?.[0] ? system.info.pu.join(",") : ""
 
 	// keep tabsRef in sync for keyboard navigation
 	const tabs = ["core", "network", "disk"]
+	if (hasThermal) tabs.push("thermal")
 	if (hasGpu) tabs.push("gpu")
 	if (hasContainers) tabs.push("containers")
 	if (hasSystemd) tabs.push("services")
@@ -88,6 +100,7 @@ export default memo(function SystemDetail({ id }: { id: string }) {
 
 	// shared chart props
 	const coreProps = { chartData, grid, dataEmpty, showMax, isLongerChart, maxValues }
+	const thermalProps = { chartData, grid, dataEmpty, maxValues }
 
 	function defaultLayout() {
 		return (
@@ -146,6 +159,8 @@ export default memo(function SystemDetail({ id }: { id: string }) {
 					{hasGpuPowerData && <GpuPowerChart chartData={chartData} grid={grid} dataEmpty={dataEmpty} />}
 				</div>
 
+				{hasThermal && <ThermalDiagnostics {...thermalProps} />}
+
 				{hasGpuData && lastGpus && (
 					<GpuCharts
 						chartData={chartData}
@@ -191,6 +206,12 @@ export default memo(function SystemDetail({ id }: { id: string }) {
 						<HardDriveIcon className="size-3.5" />
 						<Trans>Disk</Trans>
 					</TabsTrigger>
+					{hasThermal && (
+						<TabsTrigger value="thermal" className="w-full flex items-center gap-2">
+							<ThermometerIcon className="size-3.5" />
+							<Trans>Thermal</Trans>
+						</TabsTrigger>
+					)}
 					{hasGpu && (
 						<TabsTrigger value="gpu" className="w-full flex items-center gap-2">
 							<GpuIcon className="size-3.5" />
@@ -255,6 +276,12 @@ export default memo(function SystemDetail({ id }: { id: string }) {
 						</>
 					)}
 				</TabsContent>
+
+				{hasThermal && (
+					<TabsContent value="thermal" forceMount className={activeTab === "thermal" ? "contents" : "hidden"}>
+						{mountedTabs.has("thermal") && <ThermalDiagnostics {...thermalProps} />}
+					</TabsContent>
+				)}
 
 				{hasGpu && (
 					<TabsContent value="gpu" forceMount className={activeTab === "gpu" ? "contents" : "hidden"}>

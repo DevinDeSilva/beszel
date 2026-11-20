@@ -159,6 +159,10 @@ export interface SystemStats {
 	t?: Record<string, number>
 	/** fan speeds (RPM) — keyed by `<chip>_<label-or-fan-idx>` */
 	f?: Record<string, number>
+	/** max temperature per sensor over the record's window (longer records only) */
+	tm?: Record<string, number>
+	/** min fan speed per fan over the record's window (longer records only) */
+	fmn?: Record<string, number>
 	/** extra filesystems */
 	efs?: Record<string, ExtraFsStats>
 	/** ZFS pool metrics */
