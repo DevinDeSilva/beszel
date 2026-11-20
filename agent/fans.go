@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -97,6 +98,9 @@ func discoverHwmonFans(root string) ([]fanSensor, error) {
 		return nil, err
 	}
 	var sensors []fanSensor
+	// chipDirs[i] is the hwmon chip directory of sensors[i], kept for
+	// disambiguating colliding keys below.
+	var chipDirs []string
 	for _, entry := range entries {
 		chipDir := filepath.Join(root, entry.Name())
 		sensorDir := chipDir
@@ -128,16 +132,69 @@ func discoverHwmonFans(root string) ([]fanSensor, error) {
 				key = chipName + "_" + label
 			}
 			sensors = append(sensors, fanSensor{key, inputPath, chipName})
+			chipDirs = append(chipDirs, chipDir)
 		}
 	}
+	disambiguateFanKeys(sensors, chipDirs)
 	return sensors, nil
 }
+
+// disambiguateFanKeys renames fans whose "<chip>_<fanN>" keys collide, which
+// happens when several unlabeled chips share a driver name (e.g. the two
+// "acpi_fan" chips on DGX Spark). Without this, all but one fan are silently
+// overwritten in the stats map. Colliding fans are renamed after the stable
+// identity of their backing device (ACPI object such as FAN0, or the device
+// node name), never after the transient hwmonN index unless nothing else is
+// available. Fans with unique keys are left untouched so existing series
+// names on other hosts do not change.
+func disambiguateFanKeys(sensors []fanSensor, chipDirs []string) {
+	counts := make(map[string]int, len(sensors))
+	for _, s := range sensors {
+		counts[s.key]++
+	}
+	fansPerChip := make(map[string]int, len(chipDirs))
+	for _, dir := range chipDirs {
+		fansPerChip[dir]++
+	}
+	used := make(map[string]struct{}, len(sensors))
+	for i := range sensors {
+		if counts[sensors[i].key] < 2 {
+			used[sensors[i].key] = struct{}{}
+		}
+	}
+	for i := range sensors {
+		if counts[sensors[i].key] < 2 {
+			continue
+		}
+		id := hwmonDeviceIdentity(chipDirs[i])
+		if id == "" {
+			id = filepath.Base(chipDirs[i])
+		}
+		key := sensors[i].chip + "_" + id
+		if fansPerChip[chipDirs[i]] > 1 {
+			key += "_" + strings.TrimPrefix(sensors[i].key, sensors[i].chip+"_")
+		}
+		for n := 2; ; n++ {
+			if _, taken := used[key]; !taken {
+				break
+			}
+			key = sensors[i].chip + "_" + id + "_" + strconv.Itoa(n)
+		}
+		used[key] = struct{}{}
+		sensors[i].key = key
+	}
+}
+
+var fanFailures = sensorFailureLog{quiet: true}
 
 func readFanSensors(sensors []fanSensor) map[string]uint16 {
 	fans := make(map[string]uint16, len(sensors))
 	for _, sensor := range sensors {
 		if rpm, ok := utils.ReadUintFile(sensor.path); ok {
+			fanFailures.recovered("fan", sensor.key)
 			fans[sensor.key] = uint16(rpm)
+		} else {
+			fanFailures.failed("fan", sensor.key, sensor.path, nil)
 		}
 	}
 	return fans
