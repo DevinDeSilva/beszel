@@ -310,6 +310,35 @@ func TestAverageSystemStatsSlice_Fans(t *testing.T) {
 	assert.Equal(t, uint16(1_500), result.Fans["case"])
 }
 
+// Tests that per-sensor temperature maxima and fan minima survive averaging,
+// so a short thermal spike or a transient 0 RPM sample stays visible in longer
+// records, and that maxima/minima from already-aggregated records carry over.
+func TestAverageSystemStatsSlice_TemperatureMaxAndFanMin(t *testing.T) {
+	input := []system.Stats{
+		{
+			Temperatures: map[string]float64{"acpitz_TSOC": 60.0, "GB10": 55.0},
+			Fans:         map[string]uint16{"acpi_fan_FAN0": 2035, "acpi_fan_FAN1": 2090},
+		},
+		{
+			Temperatures: map[string]float64{"acpitz_TSOC": 96.8, "GB10": 81.0},
+			Fans:         map[string]uint16{"acpi_fan_FAN0": 0, "acpi_fan_FAN1": 2100},
+		},
+		{
+			// an already-aggregated record whose window contained a higher peak
+			Temperatures:    map[string]float64{"acpitz_TSOC": 62.0, "GB10": 57.0},
+			MaxTemperatures: map[string]float64{"acpitz_TSOC": 63.0, "GB10": 90.0},
+			Fans:            map[string]uint16{"acpi_fan_FAN0": 2040, "acpi_fan_FAN1": 2095},
+			MinFans:         map[string]uint16{"acpi_fan_FAN0": 2010, "acpi_fan_FAN1": 1900},
+		},
+	}
+
+	result := records.AverageSystemStatsSlice(input)
+
+	assert.Equal(t, map[string]float64{"acpitz_TSOC": 96.8, "GB10": 90.0}, result.MaxTemperatures)
+	assert.Equal(t, map[string]uint16{"acpi_fan_FAN0": 0, "acpi_fan_FAN1": 1900}, result.MinFans)
+	assert.Equal(t, 72.93, result.Temperatures["acpitz_TSOC"])
+}
+
 func TestAverageSystemStatsSlice_NetworkInterfaces(t *testing.T) {
 	input := []system.Stats{
 		{

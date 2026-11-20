@@ -55,13 +55,16 @@ type Stats struct {
 	DiskIoStats       [6]float64           `json:"dios,omitzero" cbor:"35,keyasint,omitzero"`   // [read time %, write time %, io utilization %, r_await ms, w_await ms, weighted io %]
 	MaxDiskIoStats    [6]float64           `json:"diosm,omitzero" cbor:"-"`                     // max values for DiskIoStats
 	Fans              map[string]uint16    `json:"f,omitempty" cbor:"36,keyasint,omitempty"`
-	Batteries         map[string]uint8     `json:"bats,omitempty" cbor:"37,keyasint,omitempty"`
-	ZfsPools          map[string]*ZfsPool  `json:"z,omitempty" cbor:"39,keyasint,omitempty"`  // ZFS pool metrics, keyed by pool name
-	DiskIOTotal       [2]uint64            `json:"diot,omitzero" cbor:"38,keyasint,omitzero"` // [total read bytes, total write bytes] cumulative device counters
-	WiFi              map[string]int8      `json:"wf,omitempty" cbor:"40,keyasint,omitempty"` // RSSI dBm keyed by interface; unavailable readings omitted
-	MemBytes          [4]uint64            `json:"mem,omitzero" cbor:"41,keyasint,omitzero"`  // [total, used, buff/cache, zfs arc] bytes
-	MaxMemBytes       uint64               `json:"memm,omitzero" cbor:"-"`                    // max used memory bytes
-	SwapBytes         [2]uint64            `json:"swap,omitzero" cbor:"42,keyasint,omitzero"` // [total, used] bytes
+	// Hub-side aggregates for longer records, so short peaks survive averaging.
+	MaxTemperatures map[string]float64  `json:"tm,omitempty" cbor:"-"`  // max °C per sensor
+	MinFans         map[string]uint16   `json:"fmn,omitempty" cbor:"-"` // min RPM per fan
+	Batteries       map[string]uint8    `json:"bats,omitempty" cbor:"37,keyasint,omitempty"`
+	ZfsPools        map[string]*ZfsPool `json:"z,omitempty" cbor:"39,keyasint,omitempty"`  // ZFS pool metrics, keyed by pool name
+	DiskIOTotal     [2]uint64           `json:"diot,omitzero" cbor:"38,keyasint,omitzero"` // [total read bytes, total write bytes] cumulative device counters
+	WiFi            map[string]int8     `json:"wf,omitempty" cbor:"40,keyasint,omitempty"` // RSSI dBm keyed by interface; unavailable readings omitted
+	MemBytes        [4]uint64           `json:"mem,omitzero" cbor:"41,keyasint,omitzero"`  // [total, used, buff/cache, zfs arc] bytes
+	MaxMemBytes     uint64              `json:"memm,omitzero" cbor:"-"`                    // max used memory bytes
+	SwapBytes       [2]uint64           `json:"swap,omitzero" cbor:"42,keyasint,omitzero"` // [total, used] bytes
 }
 
 // ZfsPool holds per-pool ZFS metrics for a single collection interval.

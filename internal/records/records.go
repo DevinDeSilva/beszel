@@ -389,9 +389,20 @@ func AverageSystemStatsSlice(records []system.Stats) system.Stats {
 			if sum.Temperatures == nil {
 				sum.Temperatures = make(map[string]float64, len(stats.Temperatures))
 			}
+			if sum.MaxTemperatures == nil {
+				sum.MaxTemperatures = make(map[string]float64, len(stats.Temperatures))
+			}
 			tempCount++
 			for key, value := range stats.Temperatures {
 				sum.Temperatures[key] += value
+				// 1m records have no MaxTemperatures; longer ones carry the max of their window
+				peak := value
+				if m, ok := stats.MaxTemperatures[key]; ok {
+					peak = max(peak, m)
+				}
+				if cur, ok := sum.MaxTemperatures[key]; !ok || peak > cur {
+					sum.MaxTemperatures[key] = peak
+				}
 			}
 		}
 
@@ -400,9 +411,19 @@ func AverageSystemStatsSlice(records []system.Stats) system.Stats {
 			if fanSums == nil {
 				fanSums = make(map[string]uint64, len(stats.Fans))
 			}
+			if sum.MinFans == nil {
+				sum.MinFans = make(map[string]uint16, len(stats.Fans))
+			}
 			fanCount++
 			for key, value := range stats.Fans {
 				fanSums[key] += uint64(value)
+				low := value
+				if m, ok := stats.MinFans[key]; ok {
+					low = min(low, m)
+				}
+				if cur, ok := sum.MinFans[key]; !ok || low < cur {
+					sum.MinFans[key] = low
+				}
 			}
 		}
 
