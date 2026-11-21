@@ -12,6 +12,7 @@ permissions:
 
 jobs:
   lock-inactive:
+    if: ${{ github.repository_owner == 'henrygd' }}
     name: Lock Inactive Issues
     runs-on: ubuntu-24.04
     steps:
@@ -25,6 +26,7 @@ jobs:
           lock-reason-prs: ""
 
   close-stale:
+    if: ${{ github.repository_owner == 'henrygd' }}
     name: Close Stale Issues
     runs-on: ubuntu-24.04
     steps:

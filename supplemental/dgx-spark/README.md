@@ -87,34 +87,141 @@ On DGX Spark the following series are renamed compared with upstream:
 History recorded under the old names stays in the database under those names.
 To keep the upstream thermal names, set `ACPI_SENSOR_NAMES=false`.
 
-## Build, install, validate
+## Status and compatibility
+
+This is a **preview** maintained outside the Beszel project.
+
+* Verified on one DGX Spark: DGX OS, kernel 7.0.0-1025-nvidia, EC firmware
+  0x03000d07. The older-kernel `acpitz` naming path is covered by fixture
+  tests only. Reports from other units, kernels and firmware are welcome.
+* The agent is a drop-in replacement for upstream's and speaks the same
+  protocol. Upstream hubs can read it. The diagnostics section and peak-keeping
+  long ranges need this fork's hub.
+* The fork's hub works with upstream agents on other machines.
+
+## Install
+
+Prebuilt binaries are on the
+[Releases](https://github.com/DevinDeSilva/beszel/releases) page. Every archive
+contains a single binary. Pick one of the layouts below.
+
+### A. Hub and agent both on the Spark
+
+```bash
+mkdir -p ~/beszel-dl && cd ~/beszel-dl
+base=https://github.com/DevinDeSilva/beszel/releases/latest/download
+curl -fsSL --remote-name-all $base/beszel-agent_linux_arm64.tar.gz $base/beszel_linux_arm64.tar.gz $base/install-user-services.sh $base/SHA256SUMS
+sha256sum --ignore-missing -c SHA256SUMS
+tar xzf beszel-agent_linux_arm64.tar.gz && tar xzf beszel_linux_arm64.tar.gz
+sudo loginctl enable-linger "$USER"          # once: run user services without a login
+bash install-user-services.sh "$PWD"
+```
+
+The script installs both as systemd user services (no root). The hub listens on
+`0.0.0.0:8090`; the first admin login is in `~/.config/beszel/hub.env`. The
+agent listens on `127.0.0.1:45876` and already trusts the local hub's key. In
+the hub, click *Add System* and use host `127.0.0.1`, port `45876`.
+
+### B. Agent on the Spark, hub on another machine
+
+1. Start the hub (section C for a Mac, or A on another Linux box).
+2. In the hub, click *Add System* and copy the **public key**.
+3. On the Spark:
+
+   ```bash
+   mkdir -p ~/beszel-dl && cd ~/beszel-dl
+   base=https://github.com/DevinDeSilva/beszel/releases/latest/download
+   curl -fsSL --remote-name-all $base/beszel-agent_linux_arm64.tar.gz $base/install-user-services.sh $base/SHA256SUMS
+   sha256sum --ignore-missing -c SHA256SUMS && tar xzf beszel-agent_linux_arm64.tar.gz
+   sudo loginctl enable-linger "$USER"
+   AGENT_ONLY=1 HUB_KEY='ssh-ed25519 AAAA...' bash install-user-services.sh "$PWD"
+   ```
+
+4. Allow the hub to reach port 45876 on the Spark (see *Firewall* below).
+5. Finish *Add System* in the hub with the Spark's address (LAN or Tailscale
+   IP) and port `45876`.
+
+Allowed hub keys live in `~/.config/beszel/authorized_keys`, one per line. Add
+a line to let another hub read the same agent. The agent stays in SSH mode
+(the hub connects to it). Don't switch it to WebSocket mode if more than one
+hub needs it.
+
+### C. Hub on a Mac (launchd)
+
+```bash
+arch=$(uname -m); [ "$arch" = x86_64 ] && arch=amd64
+mkdir -p ~/beszel-dl && cd ~/beszel-dl
+base=https://github.com/DevinDeSilva/beszel/releases/latest/download
+curl -fsSL --remote-name-all $base/beszel_darwin_$arch.tar.gz $base/install-macos-hub.sh
+tar xzf beszel_darwin_$arch.tar.gz
+bash install-macos-hub.sh ./beszel
+```
+
+The script installs into `~/Library/Application Support/Beszel` and runs the
+hub as a launchd agent that starts at login and restarts if it stops. If an
+upstream hub already lives there, its data is used as is (backed up first) and
+the old binary is kept as `beszel.prev`. Logs are in
+`~/Library/Logs/beszel-hub.log`.
+
+* Restart: `launchctl kickstart -k gui/$(id -u)/com.beszel.hub`
+* Stop: `launchctl bootout gui/$(id -u)/com.beszel.hub`
+* Roll back: `mv beszel.prev beszel` in that folder, then restart.
+
+Don't keep the hub's data folder in a synced folder (iCloud Drive, Google
+Drive, Dropbox). Syncing a live SQLite database can corrupt it.
+
+### Firewall
+
+The hub connects **to** the agent on TCP 45876. Allow only the hub's address.
+
+firewalld (DGX OS default). Interfaces such as `tailscale0` that aren't
+assigned to a zone fall into `public`:
+
+```bash
+sudo firewall-cmd --permanent --zone=public --add-rich-rule='rule family="ipv4" source address="HUB_IP/32" port port="45876" protocol="tcp" accept'
+sudo firewall-cmd --reload
+```
+
+ufw:
+
+```bash
+sudo ufw allow from HUB_IP to any port 45876 proto tcp
+```
+
+### Upgrading
+
+Download the new release and re-run the same installer. Keys, settings and
+history are kept. **Don't run `beszel update` or `beszel-agent update`:** fork
+builds refuse, and an upstream binary would replace the fork.
+
+### Coming from an upstream install
+
+* Fans and thermal zones are recorded under new names (see the table above).
+  Older history stays under the old names.
+* Hub data is compatible: point the fork's hub at the existing `beszel_data`
+  folder (the Mac installer does this).
+* An upstream agent on the Spark (Docker or binary) must be stopped first, or
+  it will hold port 45876.
+
+### Uninstall
+
+```bash
+# Spark
+systemctl --user disable --now beszel-agent beszel-hub 2>/dev/null
+rm -f ~/.config/systemd/user/beszel-{agent,hub}.service && systemctl --user daemon-reload
+rm -rf ~/.local/opt/beszel          # data: ~/.local/share/beszel, config: ~/.config/beszel
+# Mac
+launchctl bootout gui/$(id -u)/com.beszel.hub; rm ~/Library/LaunchAgents/com.beszel.hub.plist
+```
+
+## Build from source
 
 ```bash
 make build-web-ui            # or: npm --prefix internal/site ci && npm --prefix internal/site run build
-CGO_ENABLED=0 go build -ldflags "-w -s" -o build/beszel-agent ./internal/cmd/agent
-CGO_ENABLED=0 go build -ldflags "-w -s" -o build/beszel ./internal/cmd/hub
-supplemental/dgx-spark/install-user-services.sh   # systemd --user hub + agent
-```
-
-The install script runs both as user services (lingering must be enabled). The
-agent listens on `127.0.0.1:45876` and is authorized only for the local hub's
-key. Re-run the script to upgrade.
-
-### Agent only, reporting to a hub elsewhere (e.g. a Mac)
-
-```bash
-AGENT_ONLY=1 HUB_KEY='ssh-ed25519 AAAA...' supplemental/dgx-spark/install-user-services.sh
-```
-
-Copy `HUB_KEY` from the remote hub's *Add System* dialog. Then add the system
-there with this machine's address (e.g. its Tailscale IP) and port `45876`.
-Allowed hub keys live in `~/.config/beszel/authorized_keys`, one per line, so
-more hubs can be added later. Upstream hubs show the renamed fans and zones in
-their normal charts. The thermal diagnostics section and peak-preserving long
-ranges need this fork's hub:
-
-```bash
-CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags "-w -s" -o build/beszel_darwin_arm64 ./internal/cmd/hub
+CGO_ENABLED=0 go build -tags no_self_update -ldflags "-w -s" -o build/beszel-agent ./internal/cmd/agent
+CGO_ENABLED=0 go build -tags no_self_update -ldflags "-w -s" -o build/beszel ./internal/cmd/hub
+CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -tags no_self_update -ldflags "-w -s" -o build/beszel_darwin_arm64 ./internal/cmd/hub
+supplemental/dgx-spark/install-user-services.sh build   # layout A; or AGENT_ONLY=1 HUB_KEY=... for B
 ```
 
 Tests:
@@ -124,7 +231,15 @@ go test -tags testing ./agent/ ./internal/records/
 cd internal/site && bun test src/lib/thermal.test.ts
 ```
 
-Ground truth (read-only):
+Releases: push a tag like `dgx-v0.21.2-1`. The workflow
+`.github/workflows/dgx-spark-release.yml` runs the tests, builds the agent
+(Linux arm64/amd64) and the hub (Linux and macOS, arm64/amd64), and attaches
+them with the install scripts and `SHA256SUMS`. Upstream's release, Docker,
+Helm and issue-bot workflows are skipped outside `henrygd/beszel`.
+
+## Validate (read-only)
+
+Compare the dashboard with sysfs and `nvidia-smi`:
 
 ```bash
 for h in /sys/class/hwmon/hwmon*; do [ "$(cat $h/name)" = acpi_fan ] && echo "$(cat $h/device/firmware_node/path): $(cat $h/fan1_input) RPM"; done
@@ -132,12 +247,20 @@ for z in /sys/class/thermal/thermal_zone*; do echo "$(cat $z/device/path 2>/dev/
 nvidia-smi --query-gpu=temperature.gpu,power.draw,utilization.gpu,clocks.sm --format=csv,noheader,nounits
 ```
 
-## Not done yet / follow-ups
+## Known limitations
 
-* **Hub-side alerts (phase 5).** The existing *Temperature* alert already works
-  on the hottest sensor (the agent's dashboard temp is the max of all sensors),
-  with a sustained duration. Dedicated high-temp/low-fan, fan-telemetry-loss
-  and rapid-heating alerts are only UI badges so far.
-* Load validation: the small and medium GPU workload acceptance runs still
-  need to be recorded with this build.
-* Optional NVML on arm64, GPU SM clock, and an opt-in burst sampling mode.
+* Verified on a single unit (see *Status*). GPU load acceptance runs have not
+  been recorded yet.
+* Zone names are the raw ACPI ids (`TSOC`, `TS0E`, …). NVIDIA doesn't document
+  what each zone measures, so no friendly names are guessed.
+* High-temp/low-fan, telemetry loss and rapid heating are UI badges only. The
+  standard *Temperature* alert works on the hottest sensor.
+* The diagnostics section appears on any system that reports `acpitz*`
+  temperatures and fans, not only on a Spark.
+* New UI text is English-only.
+* No Docker image; binary install only.
+* `smartctl failed … no serial number` in the agent log is harmless. Disk
+  S.M.A.R.T. needs root, and a user service doesn't have it.
+* NVML is not used on arm64 (upstream builds it for amd64 only). GPU data comes
+  from one long-running `nvidia-smi` process. GPU clock, unified-memory
+  details and an opt-in burst sampling mode are not implemented.

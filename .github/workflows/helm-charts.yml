@@ -19,6 +19,7 @@ env:
 
 jobs:
   changes:
+    if: ${{ github.repository_owner == 'henrygd' }}
     name: Detect changed charts
     runs-on: ubuntu-latest
     outputs:

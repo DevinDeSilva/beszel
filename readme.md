@@ -1,5 +1,14 @@
 # Beszel
 
+> [!IMPORTANT]
+> **This is an unofficial fork for NVIDIA DGX Spark thermal monitoring.** It is not affiliated with or supported by the Beszel project.
+>
+> It adds stable names for both DGX Spark fans and the seven ACPI thermal zones, keeps temperature peaks and fan minimums on long time ranges, and adds a *Platform thermal diagnostics* section (thermal timeline, fan response, GPU workload, fan-curve scatter, high-temp/low-fan badges). All collection is read-only.
+>
+> **Install, upgrade and limitations: [supplemental/dgx-spark/README.md](supplemental/dgx-spark/README.md).** Binaries are on this fork's [Releases](../../releases) page. They are built with self-update disabled, so `update` can't replace them with upstream builds. For everything else, see upstream [henrygd/beszel](https://github.com/henrygd/beszel) and [beszel.dev](https://beszel.dev). Please report fork-specific issues here, not upstream.
+>
+> Everything below is the upstream readme.
+
 Beszel is a lightweight server monitoring platform that includes Docker statistics, historical data, and alert functions.
 
 It has a friendly web interface, simple configuration, and is ready to use out of the box. It supports automatic backup, multi-user, OAuth authentication, and API access.
